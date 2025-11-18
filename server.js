@@ -177,7 +177,7 @@ app.post('/mcp', async (req, res) => {
           serverInfo: {
             name: 'espn-mcp-server',
             version: '2.0.1',
-            description: 'Multi-source college sports data API with ESPN, CFBD, and NCAA data'
+            description: 'Multi-source college sports data API'
           },
           capabilities: {
             tools: {}
@@ -198,77 +198,12 @@ app.post('/mcp', async (req, res) => {
               inputSchema: {
                 type: 'object',
                 properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name (e.g., oklahoma, texas, alabama)',
-                    default: 'oklahoma'
-                  },
-                  sport: {
-                    type: 'string',
-                    description: 'Sport (football, mens-basketball, womens-basketball, baseball, softball)',
-                    default: 'football'
-                  }
+                  team: { type: 'string', description: 'Team name', default: 'oklahoma' },
+                  sport: { type: 'string', description: 'Sport', default: 'football' }
                 }
               }
             },
             {
               name: 'get_schedule',
-              description: 'Get team schedule with upcoming games',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type: 'string',
-                    description: 'Team name',
-                    default: 'oklahoma'
-                  },
-                  sport: {
-                    type: 'string',
-                    description: 'Sport',
-                    default: 'football'
-                  },
-                  limit: {
-                    type: 'number',
-                    description: 'Number of games to return',
-                    default: 5
-                  }
-                }
-              }
-            },
-            {
-              name: 'get_scoreboard',
-              description: 'Get today\'s games across all teams',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  sport: {
-                    type: 'string',
-                    description: 'Sport',
-                    default: 'football'
-                  }
-                }
-              }
-            },
-            {
-              name: 'get_rankings',
-              description: 'Get AP Top 25 rankings',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  sport: {
-                    type: 'string',
-                    description: 'Sport',
-                    default: 'football'
-                  }
-                }
-              }
-            },
-            {
-              name: 'get_recruiting',
-              description: 'Get recruiting class rankings and ratings',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  team: {
-                    type:
+              description: 'Get team schedule
 
