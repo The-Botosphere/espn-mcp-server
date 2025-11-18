@@ -110,6 +110,7 @@ app.get('/health', (req, res) => {
 /**
  * MCP ENDPOINT - For bot integration
  * Requires Bearer token authentication
+ * Supports both tool discovery and tool execution
  */
 app.post('/mcp', async (req, res) => {
   try {
@@ -134,12 +135,94 @@ app.post('/mcp', async (req, res) => {
     }
     
     // Parse MCP request
-    const { tool, parameters = {} } = req.body;
+    const { tool, parameters = {}, action } = req.body;
     
-    if (!tool) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Tool name required in request body' 
+    // Handle discovery request
+    if (action === 'discover' || !tool) {
+      return res.json({
+        success: true,
+        tools: [
+          {
+            name: 'get_score',
+            description: 'Get current or recent game score for a team',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              sport: { type: 'string', default: 'football', description: 'Sport (football, mens-basketball, etc.)' }
+            }
+          },
+          {
+            name: 'get_schedule',
+            description: 'Get team schedule',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              sport: { type: 'string', default: 'football', description: 'Sport' },
+              limit: { type: 'number', default: 5, description: 'Number of games to return' }
+            }
+          },
+          {
+            name: 'get_scoreboard',
+            description: 'Get today\'s games across all teams',
+            parameters: {
+              sport: { type: 'string', default: 'football', description: 'Sport' }
+            }
+          },
+          {
+            name: 'get_rankings',
+            description: 'Get AP Top 25 rankings',
+            parameters: {
+              sport: { type: 'string', default: 'football', description: 'Sport' }
+            }
+          },
+          {
+            name: 'get_recruiting',
+            description: 'Get recruiting class rankings',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year (defaults to current)' }
+            }
+          },
+          {
+            name: 'get_talent',
+            description: 'Get team talent composite rating',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year' }
+            }
+          },
+          {
+            name: 'get_stats',
+            description: 'Get advanced team statistics (EPA, Success Rate, etc.)',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year' }
+            }
+          },
+          {
+            name: 'get_betting',
+            description: 'Get betting lines and spreads',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year' },
+              week: { type: 'number', optional: true, description: 'Week number' }
+            }
+          },
+          {
+            name: 'get_ratings',
+            description: 'Get SP+ ratings',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year' }
+            }
+          },
+          {
+            name: 'get_records',
+            description: 'Get team records (wins/losses)',
+            parameters: {
+              team: { type: 'string', default: 'oklahoma', description: 'Team name' },
+              year: { type: 'number', optional: true, description: 'Year' }
+            }
+          }
+        ]
       });
     }
     
@@ -288,40 +371,6 @@ app.post('/mcp', async (req, res) => {
         }
         break;
         
-      case 'ncaa_scoreboard':
-        const ncaaSport = parameters.sport || 'football';
-        const ncaaDiv = parameters.division || 'fbs';
-        const ncaaDate = parameters.date;
-        const ncaaScoreboard = await getNCAAScoreboad(ncaaSport, ncaaDiv, ncaaDate);
-        if (ncaaScoreboard.games && ncaaScoreboard.games.length > 0) {
-          result = `🏈 ${ncaaSport.toUpperCase()} ${ncaaDiv.toUpperCase()} Games:\n\n`;
-          ncaaScoreboard.games.slice(0, 10).forEach((game, i) => {
-            result += `${i + 1}. ${game.away.shortName} ${game.away.score || 0} at ${game.home.shortName} ${game.home.score || 0}`;
-            if (game.status) result += ` (${game.status})`;
-            result += '\n';
-          });
-        } else {
-          result = `No ${ncaaSport} games found for ${ncaaDiv.toUpperCase()}`;
-        }
-        break;
-        
-      case 'ncaa_rankings':
-        const ncaaRankSport = parameters.sport || 'football';
-        const ncaaRankDiv = parameters.division || 'fbs';
-        const ncaaPoll = parameters.poll || 'associated-press';
-        const ncaaRankings = await getNCAAankings(ncaaRankSport, ncaaRankDiv, ncaaPoll);
-        if (ncaaRankings && ncaaRankings.rankings) {
-          result = `🏆 ${ncaaPoll.toUpperCase()} ${ncaaRankSport.toUpperCase()} Rankings:\n\n`;
-          ncaaRankings.rankings.slice(0, 25).forEach(team => {
-            result += `${team.rank}. ${team.school} (${team.record})`;
-            if (team.points) result += ` - ${team.points} pts`;
-            result += '\n';
-          });
-        } else {
-          result = 'No NCAA rankings available';
-        }
-        break;
-        
       default:
         return res.status(400).json({ 
           success: false,
@@ -329,7 +378,7 @@ app.post('/mcp', async (req, res) => {
           availableTools: [
             'get_score', 'get_schedule', 'get_scoreboard', 'get_rankings',
             'get_recruiting', 'get_talent', 'get_stats', 'get_betting',
-            'get_ratings', 'get_records', 'ncaa_scoreboard', 'ncaa_rankings'
+            'get_ratings', 'get_records'
           ]
         });
     }
@@ -352,7 +401,6 @@ app.post('/mcp', async (req, res) => {
     });
   }
 });
-
 /**
  * ESPN ENDPOINTS
  */
