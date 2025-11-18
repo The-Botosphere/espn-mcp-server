@@ -57,6 +57,9 @@ app.get('/', (req, res) => {
     description: 'Multi-source college sports data API',
     sources: ['ESPN', 'CollegeFootballData.com', 'NCAA.com'],
     endpoints: {
+      mcp: {
+        '/mcp': 'MCP protocol endpoint (POST, requires Bearer token)'
+      },
       espn: {
         '/score': 'Get current/recent game score for a team',
         '/schedule': 'Get team schedule',
@@ -81,6 +84,7 @@ app.get('/', (req, res) => {
       }
     },
     examples: {
+      mcp: 'POST /mcp with Bearer token',
       score: '/score?team=oklahoma&sport=football&format=text',
       schedule: '/schedule?team=oklahoma&sport=football&limit=5',
       scoreboard: '/scoreboard?sport=football',
@@ -101,6 +105,252 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   });
+});
+
+/**
+ * MCP ENDPOINT - For bot integration
+ * Requires Bearer token authentication
+ */
+app.post('/mcp', async (req, res) => {
+  try {
+    // Check authentication
+    const authHeader = req.headers.authorization;
+    const apiKey = process.env.MCP_API_KEY || 'default-key-change-me';
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Missing or invalid authorization header. Use: Authorization: Bearer YOUR_API_KEY' 
+      });
+    }
+    
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    if (token !== apiKey) {
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid API key' 
+      });
+    }
+    
+    // Parse MCP request
+    const { tool, parameters = {} } = req.body;
+    
+    if (!tool) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Tool name required in request body' 
+      });
+    }
+    
+    console.log(`MCP request: ${tool}`, parameters);
+    
+    // Route to appropriate function
+    let result;
+    
+    switch (tool) {
+      case 'get_score':
+      case 'score':
+        const team = parameters.team || 'oklahoma';
+        const sport = parameters.sport || 'football';
+        const game = await getCurrentGame(team, sport);
+        result = game ? formatGameResponse(game) : `No recent games found for ${team}`;
+        break;
+        
+      case 'get_schedule':
+      case 'schedule':
+        const schedTeam = parameters.team || 'oklahoma';
+        const schedSport = parameters.sport || 'football';
+        const limit = parameters.limit || 5;
+        const schedule = await getTeamSchedule(schedTeam, schedSport);
+        result = formatScheduleResponse(schedule, limit);
+        break;
+        
+      case 'get_scoreboard':
+      case 'scoreboard':
+        const sbSport = parameters.sport || 'football';
+        const scoreboard = await getScoreboard(sbSport);
+        result = formatScoreboardResponse(scoreboard);
+        break;
+        
+      case 'get_rankings':
+      case 'rankings':
+        const rankSport = parameters.sport || 'football';
+        const rankings = await getRankings(rankSport);
+        result = rankings ? formatRankingsResponse(rankings, 25) : 'No rankings available';
+        break;
+        
+      case 'get_recruiting':
+      case 'recruiting':
+        const recTeam = parameters.team || 'oklahoma';
+        const recYear = parameters.year;
+        const recruiting = await getRecruiting(recTeam, recYear);
+        if (recruiting) {
+          result = `🎓 ${recruiting.team} ${recruiting.year} Recruiting Class:\n` +
+                   `• National Rank: #${recruiting.rank}\n` +
+                   `• Total Points: ${recruiting.points}\n` +
+                   `• Commits: ${recruiting.commits}\n` +
+                   `• Average Star Rating: ${recruiting.avgStars}⭐`;
+        } else {
+          result = `No recruiting data found for ${recTeam}`;
+        }
+        break;
+        
+      case 'get_talent':
+      case 'talent':
+        const talentTeam = parameters.team || 'oklahoma';
+        const talentYear = parameters.year;
+        const talent = await getTeamTalent(talentTeam, talentYear);
+        if (talent) {
+          result = `💪 ${talent.team} ${talent.year} Talent Composite:\n` +
+                   `• Talent Rating: ${talent.talent}\n` +
+                   `• National Rank: #${talent.rank}`;
+        } else {
+          result = `No talent data found for ${talentTeam}`;
+        }
+        break;
+        
+      case 'get_stats':
+      case 'stats':
+      case 'advanced_stats':
+        const statsTeam = parameters.team || 'oklahoma';
+        const statsYear = parameters.year;
+        const stats = await getAdvancedStats(statsTeam, statsYear);
+        if (stats) {
+          result = `📊 ${stats.team} ${stats.year} Advanced Stats:\n\n` +
+                   `Offense:\n` +
+                   `• EPA per Play: ${stats.offense.ppa?.toFixed(3) || 'N/A'}\n` +
+                   `• Success Rate: ${stats.offense.successRate?.toFixed(1) || 'N/A'}%\n` +
+                   `• Explosiveness: ${stats.offense.explosiveness?.toFixed(3) || 'N/A'}\n\n` +
+                   `Defense:\n` +
+                   `• EPA per Play: ${stats.defense.ppa?.toFixed(3) || 'N/A'}\n` +
+                   `• Success Rate: ${stats.defense.successRate?.toFixed(1) || 'N/A'}%\n` +
+                   `• Havoc Rate: ${stats.defense.havoc?.total?.toFixed(1) || 'N/A'}%`;
+        } else {
+          result = `No stats found for ${statsTeam}`;
+        }
+        break;
+        
+      case 'get_betting':
+      case 'betting':
+      case 'betting_lines':
+        const betTeam = parameters.team || 'oklahoma';
+        const betYear = parameters.year;
+        const betWeek = parameters.week;
+        const lines = await getBettingLines(betTeam, betYear, betWeek);
+        if (lines && lines.length > 0) {
+          const latest = lines[0];
+          const line = latest.lines && latest.lines.length > 0 ? latest.lines[0] : null;
+          if (line) {
+            result = `💰 ${latest.awayTeam} at ${latest.homeTeam} Betting Lines:\n` +
+                     `• Spread: ${line.formattedSpread || 'N/A'}\n` +
+                     `• Over/Under: ${line.overUnder || 'N/A'}\n` +
+                     `• ${latest.homeTeam} ML: ${line.homeMoneyline || 'N/A'}\n` +
+                     `• ${latest.awayTeam} ML: ${line.awayMoneyline || 'N/A'}`;
+          } else {
+            result = `Betting lines found but no odds available for ${betTeam}`;
+          }
+        } else {
+          result = `No betting lines found for ${betTeam}`;
+        }
+        break;
+        
+      case 'get_ratings':
+      case 'ratings':
+      case 'sp_ratings':
+        const ratTeam = parameters.team || 'oklahoma';
+        const ratYear = parameters.year;
+        const ratings = await getSPRatings(ratTeam, ratYear);
+        if (ratings) {
+          result = `⚡ ${ratings.team} ${ratings.year} SP+ Ratings:\n` +
+                   `• Overall: ${ratings.rating?.toFixed(1)} (#${ratings.ranking})\n` +
+                   `• Offense: ${ratings.offense?.rating?.toFixed(1)} (#${ratings.offense?.ranking})\n` +
+                   `• Defense: ${ratings.defense?.rating?.toFixed(1)} (#${ratings.defense?.ranking})\n` +
+                   `• Special Teams: ${ratings.specialTeams?.rating?.toFixed(1)}`;
+        } else {
+          result = `No SP+ ratings found for ${ratTeam}`;
+        }
+        break;
+        
+      case 'get_records':
+      case 'records':
+        const recTeamName = parameters.team || 'oklahoma';
+        const recYearVal = parameters.year;
+        const records = await getTeamRecords(recTeamName, recYearVal);
+        if (records) {
+          result = `📋 ${records.team} ${records.year} Records:\n` +
+                   `• Overall: ${records.total?.wins}-${records.total?.losses}\n` +
+                   `• Conference: ${records.conferenceGames?.wins}-${records.conferenceGames?.losses}\n` +
+                   `• Home: ${records.homeGames?.wins}-${records.homeGames?.losses}\n` +
+                   `• Away: ${records.awayGames?.wins}-${records.awayGames?.losses}`;
+        } else {
+          result = `No records found for ${recTeamName}`;
+        }
+        break;
+        
+      case 'ncaa_scoreboard':
+        const ncaaSport = parameters.sport || 'football';
+        const ncaaDiv = parameters.division || 'fbs';
+        const ncaaDate = parameters.date;
+        const ncaaScoreboard = await getNCAAScoreboad(ncaaSport, ncaaDiv, ncaaDate);
+        if (ncaaScoreboard.games && ncaaScoreboard.games.length > 0) {
+          result = `🏈 ${ncaaSport.toUpperCase()} ${ncaaDiv.toUpperCase()} Games:\n\n`;
+          ncaaScoreboard.games.slice(0, 10).forEach((game, i) => {
+            result += `${i + 1}. ${game.away.shortName} ${game.away.score || 0} at ${game.home.shortName} ${game.home.score || 0}`;
+            if (game.status) result += ` (${game.status})`;
+            result += '\n';
+          });
+        } else {
+          result = `No ${ncaaSport} games found for ${ncaaDiv.toUpperCase()}`;
+        }
+        break;
+        
+      case 'ncaa_rankings':
+        const ncaaRankSport = parameters.sport || 'football';
+        const ncaaRankDiv = parameters.division || 'fbs';
+        const ncaaPoll = parameters.poll || 'associated-press';
+        const ncaaRankings = await getNCAAankings(ncaaRankSport, ncaaRankDiv, ncaaPoll);
+        if (ncaaRankings && ncaaRankings.rankings) {
+          result = `🏆 ${ncaaPoll.toUpperCase()} ${ncaaRankSport.toUpperCase()} Rankings:\n\n`;
+          ncaaRankings.rankings.slice(0, 25).forEach(team => {
+            result += `${team.rank}. ${team.school} (${team.record})`;
+            if (team.points) result += ` - ${team.points} pts`;
+            result += '\n';
+          });
+        } else {
+          result = 'No NCAA rankings available';
+        }
+        break;
+        
+      default:
+        return res.status(400).json({ 
+          success: false,
+          error: `Unknown tool: ${tool}`,
+          availableTools: [
+            'get_score', 'get_schedule', 'get_scoreboard', 'get_rankings',
+            'get_recruiting', 'get_talent', 'get_stats', 'get_betting',
+            'get_ratings', 'get_records', 'ncaa_scoreboard', 'ncaa_rankings'
+          ]
+        });
+    }
+    
+    // Return MCP response
+    res.json({
+      success: true,
+      tool,
+      parameters,
+      result,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('MCP endpoint error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      tool: req.body?.tool
+    });
+  }
 });
 
 /**
@@ -500,6 +750,7 @@ app.use((req, res) => {
   res.status(404).json({ 
     error: 'Endpoint not found',
     availableEndpoints: [
+      'POST /mcp (with Bearer token)',
       '/score', '/schedule', '/scoreboard', '/rankings',
       '/cfbd/recruiting', '/cfbd/talent', '/cfbd/stats',
       '/ncaa/scoreboard', '/ncaa/rankings'
@@ -522,6 +773,7 @@ app.listen(PORT, () => {
   console.log('='.repeat(60));
   console.log(`Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST)`);
   console.log(`Documentation: http://localhost:${PORT}/`);
   console.log('='.repeat(60));
   console.log('Sources:');
@@ -532,3 +784,4 @@ app.listen(PORT, () => {
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log('='.repeat(60));
 });
+
