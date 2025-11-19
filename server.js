@@ -137,6 +137,24 @@ app.post('/mcp', async (req, res) => {
     
     console.log(`JSON-RPC Method: ${method}`, params);
     
+    // ===== INITIALIZE (MCP Handshake) =====
+    if (method === 'initialize') {
+      return res.json({
+        jsonrpc: '2.0',
+        id: id,
+        result: {
+          protocolVersion: '2024-11-05',
+          capabilities: {
+            tools: {}
+          },
+          serverInfo: {
+            name: 'ESPN-CFBD-NCAA MCP Server',
+            version: '2.0.0'
+          }
+        }
+      });
+    }
+    
     // ===== TOOL DISCOVERY =====
     if (method === 'tools/list') {
       return res.json({
@@ -487,6 +505,13 @@ app.post('/mcp', async (req, res) => {
           id: id
         });
       }
+    }
+    
+    // ===== NOTIFICATIONS =====
+    if (method === 'notifications/initialized') {
+      // Client is notifying server that initialization is complete
+      // No response needed for notifications
+      return res.status(204).send();
     }
     
     // Unknown method
