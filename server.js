@@ -390,35 +390,59 @@ app.post("/mcp", async (req, res) => {
           break;
         }
 
-        case "get_stats": {
-          const statsTeam = toolParams.team || "oklahoma";        case "get_betting": {
-          const betTeam = toolParams.team || "oklahoma";
-          const betYear = toolParams.year;
-          const betWeek = toolParams.week;
-          const lines = await getBettingLines(betTeam, betYear, betWeek);
+      case "get_stats": {
+  const statsTeam = toolParams.team || "oklahoma";
+  const statsYear = toolParams.year;
+  const stats = await getAdvancedStats(statsTeam, statsYear);
 
-          if (lines && lines.length > 0) {
-            const latest = lines[0];
-            const line =
-              latest.lines && latest.lines.length > 0
-                ? latest.lines[0]
-                : null;
+  if (stats) {
+    result =
+      `📊 ${stats.team} ${stats.year} Advanced Stats:\n\n` +
+      `Offense:\n` +
+      `• EPA per Play: ${stats.offense.ppa?.toFixed(3) || "N/A"}\n` +
+      `• Success Rate: ${stats.offense.successRate?.toFixed(1) || "N/A"}%\n` +
+      `• Explosiveness: ${stats.offense.explosiveness?.toFixed(3) || "N/A"}\n\n` +
+      `Defense:\n` +
+      `• EPA per Play: ${stats.defense.ppa?.toFixed(3) || "N/A"}\n` +
+      `• Success Rate: ${stats.defense.successRate?.toFixed(1) || "N/A"}%\n` +
+      `• Havoc Rate: ${stats.defense.havoc?.total?.toFixed(1) || "N/A"}%`;
+  } else {
+    result = `No stats found for ${statsTeam}`;
+  }
 
-            if (line) {
-              result =
-                `💰 ${latest.awayTeam} at ${latest.homeTeam} Betting Lines:\n` +
-                `• Spread: ${line.formattedSpread || "N/A"}\n` +
-                `• Over/Under: ${line.overUnder || "N/A"}\n` +
-                `• ${latest.homeTeam} ML: ${line.homeMoneyline || "N/A"}\n` +
-                `• ${latest.awayTeam} ML: ${line.awayMoneyline || "N/A"}`;
-            } else {
-              result = "Betting lines found but no odds available";
-            }
-          } else {
-            result = `No betting lines found for ${betTeam}`;
-          }
-          break;
-        }
+  break;
+}
+
+case "get_betting": {
+  const betTeam = toolParams.team || "oklahoma";
+  const betYear = toolParams.year;
+  const betWeek = toolParams.week;
+  const lines = await getBettingLines(betTeam, betYear, betWeek);
+
+  if (lines && lines.length > 0) {
+    const latest = lines[0];
+    const line =
+      latest.lines && latest.lines.length > 0
+        ? latest.lines[0]
+        : null;
+
+    if (line) {
+      result =
+        `💰 ${latest.awayTeam} at ${latest.homeTeam} Betting Lines:\n` +
+        `• Spread: ${line.formattedSpread || "N/A"}\n` +
+        `• Over/Under: ${line.overUnder || "N/A"}\n` +
+        `• ${latest.homeTeam} ML: ${line.homeMoneyline || "N/A"}\n` +
+        `• ${latest.awayTeam} ML: ${line.awayMoneyline || "N/A"}`;
+    } else {
+      result = "Betting lines found but no odds available";
+    }
+  } else {
+    result = `No betting lines found for ${betTeam}`;
+  }
+
+  break;
+}
+
 
         case "get_ratings": {
           const ratTeam = toolParams.team || "oklahoma";
