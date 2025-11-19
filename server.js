@@ -244,8 +244,44 @@ app.post('/mcp', async (req, res) => {
             
             // CFBD TOOLS (Advanced Analytics)
             {
-              name: 'get_stats',
-              description: 'Get advanced team statistics including offensive/defensive efficiency, EPA (Expected Points Added), success rates, and explosiveness metrics. Requires CFBD API key.',
+              name: 'get_player_stats',
+              description: 'Get individual player statistics including passing yards, rushing yards, touchdowns, completions, interceptions, and other traditional stats. Use this when user asks about a specific player by name. Requires CFBD API key.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name (e.g., "oklahoma")'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Season year (default: current year)'
+                  }
+                },
+                required: ['team']
+              }
+            },
+            {
+              name: 'get_team_stats',
+              description: 'Get team statistics including total passing yards, rushing yards, touchdowns, completions, and other traditional team totals. Use this when user asks about overall team performance. Requires CFBD API key.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name'
+                  },
+                  year: {
+                    type: 'number',
+                    description: 'Season year (default: current year)'
+                  }
+                },
+                required: ['team']
+              }
+            },
+            {
+              name: 'get_advanced_stats',
+              description: 'Get advanced analytics including EPA (Expected Points Added), success rates, and explosiveness metrics. Use only when user specifically asks for efficiency or advanced analytics. Requires CFBD API key.',
               inputSchema: {
                 type: 'object',
                 properties: {
@@ -259,7 +295,22 @@ app.post('/mcp', async (req, res) => {
                   },
                   stat_type: {
                     type: 'string',
-                    description: 'Type of stats: "offense", "defense", or "both" (default: "both")'
+                    description: 'Type of stats: "offense", "defense", or "both"',
+                    enum: ['offense', 'defense', 'both']
+                  }
+                },
+                required: ['team']
+              }
+            },
+            {
+              name: 'get_stats',
+              description: 'DEPRECATED: Use get_player_stats, get_team_stats, or get_advanced_stats instead.',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  team: {
+                    type: 'string',
+                    description: 'Team name'
                   }
                 },
                 required: ['team']
@@ -443,8 +494,18 @@ app.post('/mcp', async (req, res) => {
             break;
           
           // CFBD TOOLS
+          case 'get_player_stats':
+            result = await handleGetPlayerStats(args);
+            break;
+          case 'get_team_stats':
+            result = await handleGetTeamStats(args);
+            break;
+          case 'get_advanced_stats':
+            result = await handleGetAdvancedStats(args);
+            break;
           case 'get_stats':
-            result = await handleGetStats(args);
+            // Deprecated - redirect to advanced stats
+            result = await handleGetAdvancedStats(args);
             break;
           case 'get_recruiting':
             result = await handleGetRecruiting(args);
@@ -646,52 +707,97 @@ async function handleGetRankings(args) {
  * TOOL HANDLERS - CFBD
  */
 
-async function handleGetStats(args) {
-  const { team, year, stat_type = 'both', stat_subset } = args;
+async function handleGetPlayerStats(args) {
+  const { team, year } = args;
   
-  console.log(`handleGetStats called: team=${team}, year=${year}, stat_type=${stat_type}, stat_subset=${stat_subset}`);
+  console.log(`handleGetPlayerStats called: team=${team}, year=${year || 'current'}`);
   
-  // If traditional stats with player subset requested, fetch player stats
-  if (stat_type === 'traditional' && stat_subset && stat_subset.includes('player')) {
-    console.log(`Fetching player stats from CFBD`);
-    
-    const result = await getPlayerStats(team, year);
-    
-    if (result.error) {
-      console.log(`getPlayerStats returned error: ${result.message}`);
-      return result.message;
-    }
-    
-    console.log(`Player stats retrieved: ${result.players.length} players`);
-    
-    // Format player stats
-    let text = `${result.team} Player Stats (${result.year}):\n\n`;
-    
-    // Group by category
-    const categories = {};
-    result.players.forEach(p => {
-      const cat = p.category || 'general';
-      if (!categories[cat]) categories[cat] = [];
-      categories[cat].push(p);
-    });
-    
-    // Display by category
-    for (const [category, players] of Object.entries(categories)) {
-      text += `${category.toUpperCase()}:\n`;
-      players.slice(0, 10).forEach(p => {
-        text += `  ${p.player} - ${p.stat}: ${p.statValue}\n`;
-      });
-      text += `\n`;
-    }
-    
-    if (result.players.length > 50) {
-      text += `(Showing top stats - ${result.players.length} total stats available)\n`;
-    }
-    
-    return text;
+  const result = await getPlayerStats(team, year);
+  
+  if (result.error) {
+    console.log(`getPlayerStats returned error: ${result.message}`);
+    return result.message;
   }
   
-  // Otherwise, fetch advanced team stats
+  console.log(`Player stats retrieved: ${result.players.length} stat entries`);
+  
+  // Format player stats
+  let text = `${result.team} Player Stats (${result.year}):\n\n`;
+  
+  // Group by player and category
+  const playerData = {};
+  result.players.forEach(stat => {
+    const playerName = stat.player || stat.athlete || 'Unknown';
+    if (!playerData[playerName]) {
+      playerData[playerName] = {};
+    }
+    const category = stat.category || 'general';
+    if (!playerData[playerName][category]) {
+      playerData[playerName][category] = [];
+    }
+    playerData[playerName][category].push({
+      stat: stat.statType || stat.stat,
+      value: stat.stat || stat.statValue
+    });
+  });
+  
+  // Display top players
+  const players = Object.keys(playerData).slice(0, 10);
+  for (const playerName of players) {
+    text += `${playerName}:\n`;
+    for (const [category, stats] of Object.entries(playerData[playerName])) {
+      stats.forEach(s => {
+        text += `  ${s.stat}: ${s.value}\n`;
+      });
+    }
+    text += `\n`;
+  }
+  
+  if (Object.keys(playerData).length > 10) {
+    text += `(Showing top 10 players - ${Object.keys(playerData).length} total players with stats)\n`;
+  }
+  
+  return text;
+}
+
+async function handleGetTeamStats(args) {
+  const { team, year } = args;
+  
+  console.log(`handleGetTeamStats called: team=${team}, year=${year || 'current'}`);
+  
+  // Get player stats and aggregate them for team totals
+  const result = await getPlayerStats(team, year);
+  
+  if (result.error) {
+    console.log(`getPlayerStats returned error: ${result.message}`);
+    return result.message;
+  }
+  
+  // Aggregate stats
+  const teamTotals = {};
+  result.players.forEach(stat => {
+    const statType = stat.statType || stat.stat || stat.category;
+    const value = parseFloat(stat.stat || stat.statValue || 0);
+    if (!teamTotals[statType]) {
+      teamTotals[statType] = 0;
+    }
+    teamTotals[statType] += value;
+  });
+  
+  let text = `${result.team} Team Stats (${result.year}):\n\n`;
+  
+  for (const [stat, value] of Object.entries(teamTotals)) {
+    text += `${stat}: ${value}\n`;
+  }
+  
+  return text;
+}
+
+async function handleGetAdvancedStats(args) {
+  const { team, year, stat_type = 'both' } = args;
+  
+  console.log(`handleGetAdvancedStats called: team=${team}, year=${year || 'current'}, stat_type=${stat_type}`);
+  
   const result = await getAdvancedStats(team, year, stat_type);
   
   if (result.error) {
@@ -915,10 +1021,11 @@ app.listen(PORT, () => {
   console.log(`  ${process.env.CFBD_API_KEY ? '✓' : '✗'} CFBD API (analytics, recruiting, betting)`);
   console.log('  ✓ NCAA API (multi-division coverage)');
   console.log('='.repeat(60));
-  console.log('12 Tools Available:');
+  console.log('15 Tools Available:');
   console.log('  ESPN: get_score, get_schedule, get_scoreboard, get_rankings');
-  console.log('  CFBD: get_stats, get_recruiting, get_talent, get_betting, get_ratings, get_records');
+  console.log('  CFBD: get_player_stats, get_team_stats, get_advanced_stats, get_recruiting, get_talent, get_betting, get_ratings, get_records');
   console.log('  NCAA: get_ncaa_scoreboard, get_ncaa_rankings');
+  console.log('  (Deprecated: get_stats - use specific stat tools instead)');
   console.log('='.repeat(60));
   console.log(`Started at: ${new Date().toISOString()}`);
   console.log('='.repeat(60));
