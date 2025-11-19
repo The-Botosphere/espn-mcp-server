@@ -201,20 +201,31 @@ export async function getCurrentGame(teamName, sport = 'football') {
     const data = await fetchESPN(url);
     
     if (!data.events || data.events.length === 0) {
+      console.log('No events found in ESPN schedule data');
       return {
         error: true,
         message: `No games found for ${teamName}`
       };
     }
     
+    console.log(`Found ${data.events.length} events in schedule`);
+    // Log first 3 events for debugging
+    data.events.slice(0, 3).forEach((event, i) => {
+      const comp = event.competitions?.[0];
+      console.log(`Event ${i}: ${event.name} - Date: ${comp?.date} - Status: ${comp?.status?.type?.description} - Completed: ${comp?.status?.type?.completed}`);
+    });
+    
     // Find most recent or current game
     const now = new Date();
+    console.log(`Current time: ${now.toISOString()}`);
     let currentGame = null;
     
     // First, look for in-progress game
+    console.log('Searching for live game...');
     for (const event of data.events) {
       const competition = event.competitions?.[0];
       if (competition?.status?.type?.state === 'in') {
+        console.log(`Found live game: ${event.name}`);
         currentGame = event;
         break;
       }
@@ -222,17 +233,26 @@ export async function getCurrentGame(teamName, sport = 'football') {
     
     // If no live game, get most recent completed game (within last 7 days)
     if (!currentGame) {
+      console.log('No live game found, searching for recent completed games...');
       const sevenDaysAgo = new Date(now.getTime() - (7 * 24 * 60 * 60 * 1000));
+      console.log(`Searching from ${sevenDaysAgo.toISOString()} to ${now.toISOString()}`);
       let recentGames = [];
       
       for (const event of data.events) {
         const competition = event.competitions?.[0];
         const gameDate = new Date(competition?.date);
+        const isCompleted = competition?.status?.type?.completed;
+        const inDateRange = gameDate <= now && gameDate >= sevenDaysAgo;
         
-        if (gameDate <= now && gameDate >= sevenDaysAgo && competition?.status?.type?.completed) {
+        console.log(`Checking: ${event.name} - Date: ${gameDate.toISOString()} - Completed: ${isCompleted} - InRange: ${inDateRange}`);
+        
+        if (inDateRange && isCompleted) {
+          console.log(`  ✓ Adding to recent games: ${event.name}`);
           recentGames.push(event);
         }
       }
+      
+      console.log(`Found ${recentGames.length} recent completed games`);
       
       // Sort by date descending and take most recent
       if (recentGames.length > 0) {
@@ -242,6 +262,7 @@ export async function getCurrentGame(teamName, sport = 'football') {
           return dateB - dateA;
         });
         currentGame = recentGames[0];
+        console.log(`Most recent game: ${currentGame.name}`);
       }
     }
     
