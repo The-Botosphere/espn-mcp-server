@@ -26,13 +26,14 @@ const cache = new Map();
  */
 async function fetchCFBD(endpoint, params = {}) {
   if (!API_KEY) {
+    console.error('CFBD_API_KEY is not set!');
     throw new Error('CFBD_API_KEY environment variable not set. Get free key at https://collegefootballdata.com');
   }
   
   const queryString = new URLSearchParams(params).toString();
   const url = `${CFBD_BASE_URL}${endpoint}${queryString ? '?' + queryString : ''}`;
   
-  console.log(`Fetching CFBD: ${endpoint}`);
+  console.log(`Fetching CFBD: ${url}`);
   
   try {
     const response = await fetch(url, {
@@ -42,14 +43,21 @@ async function fetchCFBD(endpoint, params = {}) {
       }
     });
     
+    console.log(`CFBD Response Status: ${response.status} ${response.statusText}`);
+    
     if (!response.ok) {
       if (response.status === 401) {
+        console.error('CFBD API key is invalid or expired');
         throw new Error('CFBD API key invalid. Check your CFBD_API_KEY environment variable.');
       }
+      console.error(`CFBD API returned error: ${response.status}`);
       throw new Error(`CFBD API error: ${response.status} ${response.statusText}`);
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log(`CFBD Data received, length: ${Array.isArray(data) ? data.length : 'N/A'}`);
+    
+    return data;
     
   } catch (error) {
     console.error('CFBD fetch error:', error);
