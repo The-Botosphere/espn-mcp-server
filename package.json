@@ -1,14 +1,21 @@
 {
   "name": "espn-mcp-server",
   "version": "2.0.0",
-  "description": "Multi-source sports data MCP Server - ESPN + CFBD + NCAA",
-  "main": "server.js",
+  "description": "ESPN MCP Server - Multi-source college sports data API with JSON-RPC 2.0 compliance",
   "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": ["espn", "sports", "mcp", "college-sports", "api"],
+  "keywords": [
+    "mcp",
+    "espn",
+    "cfbd",
+    "ncaa",
+    "college-football",
+    "sports-api"
+  ],
   "author": "Kevin - The Botosphere",
   "license": "MIT",
   "dependencies": {
