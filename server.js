@@ -223,25 +223,25 @@ app.post('/mcp', async (req, res) => {
                 },
                 required: []
               }
-            },
-            {
-              name: 'get_rankings',
-              description: 'Get current AP Top 25 rankings or other poll rankings.',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  sport: {
-                    type: 'string',
-                    description: 'Sport type (default: "football")'
-                  },
-                  poll: {
-                    type: 'string',
-                    description: 'Poll type: "ap" (AP Top 25) or "coaches" (default: "ap")'
-                  }
-                },
-                required: []
-              }
-            },
+           },
+{
+  name: 'get_rankings',
+  ...
+},
+{
+  name: 'get_game_player_stats',
+  description: 'Get detailed per-game player statistics for a specific ESPN event (game). Returns passing, rushing, receiving, defensive, and special teams stats by team and player.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      eventId: {
+        type: 'string',
+        description: 'ESPN event ID for the game (e.g., "401752675").'
+      }
+    },
+    required: ['eventId']
+  }
+},
             
             // CFBD TOOLS (Advanced Analytics)
             {
