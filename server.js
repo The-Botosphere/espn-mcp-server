@@ -18,6 +18,7 @@ import {
   getRecruiting,
   getTeamTalent,
   getAdvancedStats,
+  getPlayerStats,
   getBettingLines,
   getSPRatings,
   getTeamRecords,
@@ -29,10 +30,6 @@ import {
   getConferenceStandings,
   clearCache as clearNCAACache
 } from './ncaa-api.js';
-import {
-  getTraditionalStats,
-  clearTraditionalStatsCache
-} from './stats.js';
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -53,11 +50,11 @@ app.use((req, res, next) => {
 app.get('/', (req, res) => {
   res.json({
     name: 'ESPN MCP Server',
-    version: '3.0.0',
+    version: '2.0.0',
     description: 'Multi-source college sports data API - JSON-RPC 2.0 Compliant',
     sources: ['ESPN', 'CollegeFootballData.com', 'NCAA.com'],
     mcpEndpoint: 'POST /mcp (requires Bearer token)',
-    tools: 13,
+    tools: 12,
     status: 'operational',
     timestamp: new Date().toISOString(),
     note: 'CFBD tools require CFBD_API_KEY environment variable'
@@ -153,7 +150,7 @@ app.post('/mcp', async (req, res) => {
           },
           serverInfo: {
             name: 'ESPN-CFBD-NCAA MCP Server',
-            version: '3.0.0'
+            version: '2.0.0'
           }
         }
       });
@@ -245,10 +242,10 @@ app.post('/mcp', async (req, res) => {
               }
             },
             
-            // CFBD TOOLS (Advanced + Traditional)
+            // CFBD TOOLS (Advanced Analytics)
             {
               name: 'get_stats',
-              description: 'Get traditional stats (season, game, player) and/or advanced analytics (EPA, success rate, explosiveness) for a team.',
+              description: 'Get advanced team statistics including offensive/defensive efficiency, EPA (Expected Points Added), success rates, and explosiveness metrics. Requires CFBD API key.',
               inputSchema: {
                 type: 'object',
                 properties: {
@@ -262,15 +259,7 @@ app.post('/mcp', async (req, res) => {
                   },
                   stat_type: {
                     type: 'string',
-                    description: 'Type of stats: "traditional", "advanced", or "both" (default: "traditional")',
-                    enum: ['traditional', 'advanced', 'both'],
-                    default: 'traditional'
-                  },
-                  stat_subset: {
-                    type: 'string',
-                    description: 'For traditional stats, control how much data to return: "season", "game_team", "game_players", "player_totals", or "all" (default: "all")',
-                    enum: ['season', 'game_team', 'game_players', 'player_totals', 'all'],
-                    default: 'all'
+                    description: 'Type of stats: "offense", "defense", or "both" (default: "both")'
                   }
                 },
                 required: ['team']
@@ -521,6 +510,8 @@ app.post('/mcp', async (req, res) => {
     
     // ===== NOTIFICATIONS =====
     if (method === 'notifications/initialized') {
+      // Client is notifying server that initialization is complete
+      // No response needed for notifications
       return res.status(204).send();
     }
     
@@ -656,63 +647,79 @@ async function handleGetRankings(args) {
  */
 
 async function handleGetStats(args) {
-  const {
-    team,
-    year,
-    stat_type = 'traditional',
-    stat_subset = 'all'
-  } = args;
-
-  console.log(`CFBD get_stats: team=${team}, year=${year}, type=${stat_type}, subset=${stat_subset}`);
-
-  // Traditional stats (JSON)
-  if (stat_type === 'traditional') {
-    const trad = await getTraditionalStats(team, year, stat_subset);
-    return trad;
-  }
-
-  // Advanced stats (existing behavior - pretty text)
-  if (stat_type === 'advanced') {
-    const result = await getAdvancedStats(team, year, 'both');
+  const { team, year, stat_type = 'both', stat_subset } = args;
+  
+  console.log(`handleGetStats called: team=${team}, year=${year}, stat_type=${stat_type}, stat_subset=${stat_subset}`);
+  
+  // If traditional stats with player subset requested, fetch player stats
+  if (stat_type === 'traditional' && stat_subset && stat_subset.includes('player')) {
+    console.log(`Fetching player stats from CFBD`);
+    
+    const result = await getPlayerStats(team, year);
     
     if (result.error) {
+      console.log(`getPlayerStats returned error: ${result.message}`);
       return result.message;
     }
     
-    let text = `Advanced Stats for ${result.team} (${result.year}):\n\n`;
+    console.log(`Player stats retrieved: ${result.players.length} players`);
     
-    if (result.offense) {
-      text += `OFFENSE:\n`;
-      text += `  EPA/Play: ${result.offense.ppa?.toFixed(3) || 'N/A'}\n`;
-      text += `  Success Rate: ${(result.offense.successRate * 100)?.toFixed(1) || 'N/A'}%\n`;
-      text += `  Explosiveness: ${result.offense.explosiveness?.toFixed(3) || 'N/A'}\n`;
-      text += `  Stuff Rate: ${(result.offense.stuffRate * 100)?.toFixed(1) || 'N/A'}%\n\n`;
+    // Format player stats
+    let text = `${result.team} Player Stats (${result.year}):\n\n`;
+    
+    // Group by category
+    const categories = {};
+    result.players.forEach(p => {
+      const cat = p.category || 'general';
+      if (!categories[cat]) categories[cat] = [];
+      categories[cat].push(p);
+    });
+    
+    // Display by category
+    for (const [category, players] of Object.entries(categories)) {
+      text += `${category.toUpperCase()}:\n`;
+      players.slice(0, 10).forEach(p => {
+        text += `  ${p.player} - ${p.stat}: ${p.statValue}\n`;
+      });
+      text += `\n`;
     }
     
-    if (result.defense) {
-      text += `DEFENSE:\n`;
-      text += `  EPA/Play Allowed: ${result.defense.ppa?.toFixed(3) || 'N/A'}\n`;
-      text += `  Success Rate Allowed: ${(result.defense.successRate * 100)?.toFixed(1) || 'N/A'}%\n`;
-      text += `  Explosiveness Allowed: ${result.defense.explosiveness?.toFixed(3) || 'N/A'}\n`;
-      text += `  Stuff Rate: ${(result.defense.stuffRate * 100)?.toFixed(1) || 'N/A'}%\n`;
+    if (result.players.length > 50) {
+      text += `(Showing top stats - ${result.players.length} total stats available)\n`;
     }
     
     return text;
   }
-
-  // Both: traditional (subset) + advanced (raw JSON)
-  if (stat_type === 'both') {
-    const trad = await getTraditionalStats(team, year, stat_subset);
-    const adv = await getAdvancedStats(team, year, 'both');
-    return {
-      team,
-      year,
-      traditional: trad,
-      advanced: adv
-    };
+  
+  // Otherwise, fetch advanced team stats
+  const result = await getAdvancedStats(team, year, stat_type);
+  
+  if (result.error) {
+    console.log(`getAdvancedStats returned error: ${result.message}`);
+    return result.message;
   }
-
-  return `Invalid stat_type: ${stat_type}`;
+  
+  console.log(`getAdvancedStats succeeded for ${result.team}`);
+  
+  let text = `Advanced Stats for ${result.team} (${result.year}):\n\n`;
+  
+  if (result.offense) {
+    text += `OFFENSE:\n`;
+    text += `  EPA/Play: ${result.offense.ppa?.toFixed(3) || 'N/A'}\n`;
+    text += `  Success Rate: ${(result.offense.successRate * 100)?.toFixed(1) || 'N/A'}%\n`;
+    text += `  Explosiveness: ${result.offense.explosiveness?.toFixed(3) || 'N/A'}\n`;
+    text += `  Stuff Rate: ${(result.offense.stuffRate * 100)?.toFixed(1) || 'N/A'}%\n\n`;
+  }
+  
+  if (result.defense) {
+    text += `DEFENSE:\n`;
+    text += `  EPA/Play Allowed: ${result.defense.ppa?.toFixed(3) || 'N/A'}\n`;
+    text += `  Success Rate Allowed: ${(result.defense.successRate * 100)?.toFixed(1) || 'N/A'}%\n`;
+    text += `  Explosiveness Allowed: ${result.defense.explosiveness?.toFixed(3) || 'N/A'}\n`;
+    text += `  Stuff Rate: ${(result.defense.stuffRate * 100)?.toFixed(1) || 'N/A'}%\n`;
+  }
+  
+  return text;
 }
 
 async function handleGetRecruiting(args) {
@@ -865,7 +872,6 @@ app.post('/clear-cache', (req, res) => {
   clearESPNCache();
   clearCFBDCache();
   clearNCAACache();
-  clearTraditionalStatsCache();
   
   res.json({
     message: 'All caches cleared successfully',
@@ -894,38 +900,32 @@ app.use((error, req, res, next) => {
 });
 
 /**
- * WARN IF CFBD API KEY IS MISSING
+ * START SERVER
  */
-if (!process.env.CFBD_API_KEY) {
-  console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
-  console.log('CFBD tools will not work without an API key.');
-  console.log('Get free key at: https://collegefootballdata.com\n');
-}
-
-/**
- * START SERVER (Railway Safe)
- */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("=".repeat(60));
-  console.log(`✔ Server started and listening on 0.0.0.0:${PORT}`);
-  console.log("=".repeat(60));
-
-  console.log("ESPN MCP SERVER - FULLY INTEGRATED");
-  console.log("=".repeat(60));
-
-  console.log(`Health check endpoint is active.`);
-  console.log(`MCP endpoint is active (POST to /mcp with Bearer token).`);
-
-  console.log("=".repeat(60));
-  console.log("Data Sources:");
-  console.log("  ✓ ESPN API (scores, schedules, rankings)");
-  console.log(
-    `  ${process.env.CFBD_API_KEY ? "✓" : "✗"} CFBD API (analytics, recruiting, betting, traditional stats)`
-  );
-  console.log("  ✓ NCAA API (multi-division coverage)");
-  console.log("=".repeat(60));
-
-  console.log(`Startup time: ${new Date().toISOString()}`);
-  console.log("=".repeat(60));
+app.listen(PORT, () => {
+  console.log('='.repeat(60));
+  console.log('ESPN MCP SERVER - FULLY INTEGRATED');
+  console.log('='.repeat(60));
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`MCP endpoint: http://localhost:${PORT}/mcp (POST with Bearer token)`);
+  console.log('='.repeat(60));
+  console.log('Data Sources:');
+  console.log('  ✓ ESPN API (scores, schedules, rankings)');
+  console.log(`  ${process.env.CFBD_API_KEY ? '✓' : '✗'} CFBD API (analytics, recruiting, betting)`);
+  console.log('  ✓ NCAA API (multi-division coverage)');
+  console.log('='.repeat(60));
+  console.log('12 Tools Available:');
+  console.log('  ESPN: get_score, get_schedule, get_scoreboard, get_rankings');
+  console.log('  CFBD: get_stats, get_recruiting, get_talent, get_betting, get_ratings, get_records');
+  console.log('  NCAA: get_ncaa_scoreboard, get_ncaa_rankings');
+  console.log('='.repeat(60));
+  console.log(`Started at: ${new Date().toISOString()}`);
+  console.log('='.repeat(60));
+  
+  if (!process.env.CFBD_API_KEY) {
+    console.log('\n⚠️  WARNING: CFBD_API_KEY not set!');
+    console.log('CFBD tools will not work without an API key.');
+    console.log('Get free key at: https://collegefootballdata.com\n');
+  }
 });
-
