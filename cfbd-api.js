@@ -455,6 +455,58 @@ export async function getTeamRecords(teamName, year = null) {
 }
 
 /**
+ * Get player statistics (season totals)
+ */
+export async function getPlayerStats(teamName, year = null, category = null) {
+  const team = normalizeTeamName(teamName);
+  const currentYear = year || new Date().getFullYear();
+  
+  console.log(`getPlayerStats called: team=${team}, year=${currentYear}, category=${category}`);
+  
+  const cacheKey = `player_stats_${team}_${currentYear}_${category || 'all'}`;
+  const cached = getCached(cacheKey, CACHE_DURATION.STATS);
+  if (cached) return cached;
+  
+  try {
+    const params = {
+      year: currentYear,
+      team: team
+    };
+    
+    if (category) {
+      params.category = category;
+    }
+    
+    const data = await fetchCFBD('/stats/player/season', params);
+    
+    console.log(`Player stats data received: ${data ? data.length : 0} players`);
+    
+    if (!data || data.length === 0) {
+      return {
+        error: true,
+        message: `No player stats found for ${team} in ${currentYear}`
+      };
+    }
+    
+    const result = {
+      team: team,
+      year: currentYear,
+      players: data
+    };
+    
+    setCache(cacheKey, result);
+    return result;
+    
+  } catch (error) {
+    console.error('getPlayerStats error:', error);
+    return {
+      error: true,
+      message: `Failed to get player stats: ${error.message}`
+    };
+  }
+}
+
+/**
  * Clear CFBD cache
  */
 export function clearCache() {
